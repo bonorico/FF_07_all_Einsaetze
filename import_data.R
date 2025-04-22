@@ -46,7 +46,7 @@ data <- read.csv(
 
 
 weeklyd <- data |> 
-  count(Week, einsatz_status)
+  count(Week, einsatz_status) 
 
 labeld <- weeklyd |> filter(n>=10) |> 
   left_join(
@@ -66,13 +66,33 @@ by = "Week"
 
 # mean weekly count
 
-r <- weeklyd$n |> mean()
+rmean <- weeklyd$n |> mean() # arithmetic mean: this is overestimating the rate because it is not normalizing by number of weeks --> average weekly rate
+
+# Process homogeneous rate
+rhom <- sum(weeklyd$n)/max(weeklyd$Week)
 
 # theoretical model assuming an homogeneous counting process with rare = r
+# test for homogeneity by plotting observed counting process against theoretical expected and sample of CPs 
 
-set.seed(26097)
+simn <- do.call(
+  "rbind",
+  lapply(1:50,
+         function(i) {
+           set.seed(260+i)
+           tibble(
+             Week = weeklyd$Week,
+             n = rpois(dim(weeklyd)[1], rmean)
+           ) |> 
+             mutate(
+               N = cumsum(n),
+               repl = i
+             )
+          
+         })
+)
 
-simn <- rpois(dim(weeklyd)[1], r)
+
+hist(weeklyd$n, xlab = "Weekly rates")
 
 p1 <- ggplot(
   weeklyd,
@@ -88,23 +108,34 @@ p1 <- ggplot(
   ylab("Anzahl der Einsätze je Woche")
 
 p2 <- ggplot(
-  weeklyd |> 
-    select(Week, n) |> 
-    mutate(
-      N = cumsum(n),
-      type = "Observed"
-    ) |> 
-    bind_rows(
-      tibble(
-        Week = weeklyd$Week,
-        n = simn,
+  data = simn,
+  aes(Week, N, group = repl)
+  ) + 
+  geom_step(
+    alpha = 0.5, colour = "grey"
+    ) + 
+  geom_step(
+    data = weeklyd |> 
+      select(Week, n) |> 
+      arrange(Week) |> 
+      mutate(
         N = cumsum(n),
-        type = "Theoretical"
-      )
-      
-    ),
-  aes(Week, N, colour = type)
-) + geom_step() +
+        repl = 0,
+        type = "Observed"
+      ) |> 
+      bind_rows(
+        weeklyd |> 
+          filter(n < 10) |> 
+          arrange(Week) |> 
+          mutate(
+            N = cumsum(n),
+         #   repl = 0,
+            type = "Observed (n < 10)"
+          )
+      ),
+    aes(Week, N, colour = type),
+    linewidth = 1
+    ) +
   ylab("Kumulative Anzahl der Einsätze je Woche") 
 
 
